@@ -1,0 +1,9 @@
+sample	(Intercept)	typesingle-read	conditiontreated
+s6	"                 1"	0	1
+s3	1	0	0
+s2	1	1	0
+s7	1	0	1
+s1	1	1	0
+s5	1	1	1
+s4	1	0	0
+

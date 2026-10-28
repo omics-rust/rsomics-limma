@@ -1,0 +1,9 @@
+sample	condition	type
+s3	untreated	paired-end
+s6	treated	paired-end
+s1	untreated	single-read
+s7	treated	paired-end
+s4	untreated	paired-end
+s5	treated	single-read
+s2	untreated	single-read
+
