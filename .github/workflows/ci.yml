@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x86_64
+            runner: ubuntu-24.04
+            host: x86_64-unknown-linux-gnu
+          - target: linux-aarch64
+            runner: ubuntu-24.04-arm
+            host: aarch64-unknown-linux-gnu
+          - target: macos-x86_64
+            runner: macos-15-intel
+            host: x86_64-apple-darwin
+          - target: macos-aarch64
+            runner: macos-15
+            host: aarch64-apple-darwin
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Prepare runner storage
+        run: |
+          set -euo pipefail
+          export CARGO_HOME="$RUNNER_TEMP/cargo-home"
+          export CARGO_TARGET_DIR="$RUNNER_TEMP/cargo-target"
+          export RUSTUP_HOME="$RUNNER_TEMP/rustup-home"
+          export TMPDIR="$RUNNER_TEMP/scratch"
+          mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR" "$RUSTUP_HOME" "$TMPDIR"
+          printf '%s\n' "CARGO_HOME=$CARGO_HOME" "CARGO_TARGET_DIR=$CARGO_TARGET_DIR" \
+            "RUSTUP_HOME=$RUSTUP_HOME" "TMPDIR=$TMPDIR" >> "$GITHUB_ENV"
+          python3 -B - <<'PY'
+          import os
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP']).resolve(strict=True)
+          for key in ('CARGO_HOME', 'CARGO_TARGET_DIR', 'RUSTUP_HOME', 'TMPDIR'):
+              path = Path(os.environ[key]).resolve(strict=True)
+              assert path.is_relative_to(root), (key, path)
+              print(key, path)
+          PY
+          git rev-parse HEAD
+          uname -a
+          df -h
+      - uses: dtolnay/rust-toolchain@1.91.0
+        with:
+          components: clippy,rustfmt
+      - name: Verify native host and Cargo target
+        env:
+          EXPECTED_HOST: ${{ matrix.host }}
+        run: |
+          set -euo pipefail
+          rustc -Vv
+          test "$(rustc -Vv | sed -n 's/^host: //p')" = "$EXPECTED_HOST"
+          cargo metadata --locked --no-deps --format-version 1 | python3 -B -c \
+            'import json,os,sys; assert json.load(sys.stdin)["target_directory"] == os.environ["CARGO_TARGET_DIR"]'
+      - run: cargo test --locked --all-targets --all-features
+      - run: cargo test --release --locked --all-targets --all-features
+      - if: matrix.target == 'linux-x86_64'
+        run: cargo fmt --all -- --check
+      - if: matrix.target == 'linux-x86_64'
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+      - if: matrix.target == 'linux-x86_64'
+        run: cargo doc --locked --no-deps --all-features
+        env:
+          RUSTDOCFLAGS: -D warnings
+      - if: matrix.target == 'linux-x86_64'
+        name: Verify source package and unpacked workflow tests
+        run: |
+          set -euo pipefail
+          cargo package --locked --list
+          cargo package --locked
+          archive="$CARGO_TARGET_DIR/package/rsomics-limma-0.1.0.crate"
+          shasum -a 256 "$archive"
+          mkdir "$RUNNER_TEMP/unpacked"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/unpacked"
+          package="$RUNNER_TEMP/unpacked/rsomics-limma-0.1.0"
+          test -f "$package/LICENSE-MIT"
+          test -f "$package/LICENSE-APACHE-2.0"
+          test -f "$package/THIRD_PARTY_NOTICES.md"
+          test -f "$package/docs/merge-provenance.md"
+          test -f "$package/tests/data/counts.tsv"
+          test -f "$package/tests/data/samples.tsv"
+          test -f "$package/tests/data/design.tsv"
+          cargo test --manifest-path "$package/Cargo.toml" --locked --all-targets --all-features

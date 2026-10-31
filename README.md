@@ -1,9 +1,8 @@
 # rsomics-limma
 
-Private, unpublished implementation of ordinary supplied log-expression and
-current count-input voom linear-model lifecycles. Source compatibility, native
-platforms, performance and release qualification are separate gates;
-`publish=false`.
+Native CLI for ordinary supplied log-expression and current count-input voom
+linear-model lifecycles. This source candidate is not yet published on
+crates.io; `publish=false` remains in place until registry delivery is enabled.
 
 The supported interface is the CLI, versioned analysis/contrast JSON and tables.
 The Rust library exports only `run_cli` as the binary bootstrap; statistical,
@@ -71,6 +70,33 @@ Not exposed: missing expression/count input, sample/prior weights, supplied
 libraries/offsets, blocks/correlation, other normalizations, forced legacy,
 robust/trend/TREAT modes, multi-contrast F, formula engines, plotting UI,
 batch/splice/genesets or cross-product fitted objects. No placeholders.
+
+## Qualification and installation
+
+The frozen count and ordinary-expression lifecycles have source comparisons
+against edgeR4.10.7/limma3.68.5 and native execution on Linux/macOS, x86_64/aarch64.
+This is the explicitly scoped workflow above, not a replacement for every
+operation in the R packages. The owning CI repeats native tests and verifies
+the unpacked source package; source-oracle and performance evidence remain in
+the [control plane](https://github.com/omics-rust/rsomics-world/blob/main/docs/10-products/bulk-expression.md).
+
+On one warm Linux x86_64 host, the supplied ordinary-expression 8,066-feature,
+seven-sample workflow passed the fixed resource-or-throughput criterion:
+four-worker throughput and matched process-RSS ranges strictly separated from
+source. Serial throughput and one-to-four-worker scaling did not strictly
+separate; output bytes were larger. This is not a broad-cohort, I/O, aggregate
+process-tree-memory or universal scaling claim. Count-input performance has its
+own evidence and is not inferred from ordinary expression.
+
+Build or install from this checkout with Rust1.91 or newer:
+
+```sh
+cargo install --locked --path .
+rsomics-limma --help
+```
+
+The project development guard below applies to this workspace, not to users'
+installation paths.
 
 Use `bash scripts/guarded-cargo.sh` for local builds/tests. It verifies external
 Cargo home/resolved target, rustup/toolchain, TMPDIR and caches physically,

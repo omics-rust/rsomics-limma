@@ -5,6 +5,11 @@ edition = "2024"
 rust-version = "1.91"
 license = "MIT OR Apache-2.0"
 description = "Ordinary expression and current voom linear-model analysis"
+repository = "https://github.com/omics-rust/rsomics-limma"
+homepage = "https://github.com/omics-rust/rsomics-limma"
+readme = "README.md"
+keywords = ["bioinformatics", "expression", "linear-model", "voom", "limma"]
+categories = ["science", "command-line-utilities"]
 publish = false
 
 [dependencies]
