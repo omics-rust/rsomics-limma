@@ -43,3 +43,21 @@ world/docs/plans/2026-10-28-limma-native-count-workflow.md. Equal-df/Inf and
 ordinary-no-zero routes are real implemented defaults, but are not claimed
 source-covered by this witness. Broad numeric-design/fractional-input and
 release qualification require their own proportionate evidence.
+
+## Ordinary source reference, 2026-10-31
+
+The separate unweighted expression authority is original source41184814043 at
+world06837d86ee46203cb6e5cafc9cef89f08e3f42df, with complete independent
+reload. Manifestc374d2be76ce0d0ee25aae2eeb14548ddb02d9866a0266e814bd39c5dec5c19f
+binds all827 workflow members. The source release/commit/archive remains the
+same limma3.68.5 pin above; no new upstream implementation text is transplanted.
+
+Ordinary fitting reuses this owner's System/variance/contrast arithmetic from
+b54ad8ca0b5d76274727c290641e91c6ac1f254a, not a revived micro-crate or another
+Layer B dependency. New work separates typed inputs/base state and preserves
+the source t-mixture, missing-probability and legitimate nonfinite semantics.
+The input-only8066x7 real case is prior voom-derived logCPM supplied unchanged
+to ordinary lmFit, not a newly acquired microarray cohort or old weighted-fit
+answers. Original source names are not repaired; native supplied IDs align
+through the retained source mapping. These source comparisons do not confer
+native4/performance, biological validation or release acceptance.

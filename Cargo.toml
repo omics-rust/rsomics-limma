@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.91"
 license = "MIT OR Apache-2.0"
-description = "Current voom weighted linear-model count analysis"
+description = "Ordinary expression and current voom linear-model analysis"
 publish = false
 
 [dependencies]

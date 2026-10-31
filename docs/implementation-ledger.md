@@ -75,3 +75,40 @@ test-module ordering; its original log is retained alongside the final green
 checks. Required publication metadata/native4/performance/fresh whole-feature
 review remain parent-owned. Equal-df/Inf, fractional/general-design and
 ordinary-no-zero source coverage is not inferred from the accepted witness.
+
+## Ordinary expression extension, 2026-10-31
+
+Parent adopted ordinary source41184814043 before this extension. The original
+count schema1 field layout remains flat; a shared product-local LinearFit now
+separates ordinary model state from voom-only fields. Supplied signed E has an
+explicit schema2 bundle and is never routed through count preprocessing.
+
+One new integrated CLI lifecycle first failed at missing --expression, then
+passed workers1/4, full saved contrasts/exports, boundaries and tiny outcomes.
+Its one-zero check caught f64::min changing NaN probability to1; preserving
+NaN before the probability cap corrects the actual propagation, not a bound.
+Default t-mixture/BH populations exclude missing statistics and retain their
+classes; empty mixture estimation uses the documented coefficient-prior fallback.
+
+The fixed ordinary checker passes all five source cases at workers1/4 with
+complete states, exact nonfinite classes, no-refit reload, stable IDs through
+source positional mappings and exact worker output equality. The unchanged
+count checker passes one cached source regression; both new count expression
+export and original schema1 loading reproduce their old logCPM bytes. Local
+format/strict Clippy/debug/release tests/build pass. Frozen evidence lives in
+limma-native-logexpression-20261031.O2pBNn; independent review, new-path native4,
+complete performance and release remain parent-owned and unearned.
+
+One parent-adjudicated correction wave rejects overflow in finite effect/SE
+intermediates before output, while retaining legitimate Number statistics.
+Covariance normalization now divides through separately square-rooted scales;
+the integrated lifecycle reproduces both prior defects, then passes unit/scaled
+design t/P invariance and failed-run/results output preservation. Saved effect/
+SE validation is shared across count schema1 and ordinary schema2. Full local
+format/strict Clippy/debug-release gates and all five fixed ordinary source
+cases at1/4 plus one cached accepted count regression pass on corrected frozen
+binary128c53138130bbb291a98c0825d7faeee65aed3c64a66eece721880ad38fc808.
+Correction evidence is limma-native-logexpression-correction-20261031.x5XFZN;
+the original candidate/evidence remains immutable. No source/input/band/schema
+or public API change. Parent owns corrected-diff adjudication and remaining
+native4/performance/exact-head/release gates; none is inferred here.

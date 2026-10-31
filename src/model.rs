@@ -1,3 +1,4 @@
+use crate::number::Number;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -52,6 +53,44 @@ pub struct Dataset {
     pub metadata_columns: Vec<String>,
     pub metadata: Vec<Vec<String>>,
     pub input_sha256: BTreeMap<String, String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Expression {
+    pub gene_ids: Vec<String>,
+    pub sample_ids: Vec<String>,
+    pub values: Vec<f64>,
+}
+
+impl Expression {
+    pub fn row(&self, gene: usize) -> &[f64] {
+        let n = self.sample_ids.len();
+        &self.values[gene * n..(gene + 1) * n]
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ExpressionDataset {
+    pub expression: Expression,
+    pub design: Design,
+    pub metadata_columns: Vec<String>,
+    pub metadata: Vec<Vec<String>>,
+    pub input_sha256: BTreeMap<String, String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct LinearFit {
+    pub design: Design,
+    pub coefficients: Vec<Vec<f64>>,
+    pub unscaled_se: Vec<Vec<f64>>,
+    pub sigma: Vec<Number>,
+    pub residual_df: Vec<usize>,
+    pub covariance: Vec<Vec<f64>>,
+    pub rank: usize,
+    pub pivot: Vec<usize>,
+    pub method: String,
+    pub amean: Vec<f64>,
+    pub expression: Vec<Vec<f64>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

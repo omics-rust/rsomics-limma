@@ -1,8 +1,7 @@
 use crate::{
     Result,
     linear::System,
-    model::{Dataset, Design, LibraryState, SolverStatus},
-    number::Number,
+    model::{Dataset, LibraryState, LinearFit, SolverStatus},
     poisson::PreparedDesign,
     smoothing::{self, Curve},
 };
@@ -21,18 +20,9 @@ pub struct Target {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct BaseFit {
-    pub design: Design,
-    pub coefficients: Vec<Vec<f64>>,
-    pub unscaled_se: Vec<Vec<f64>>,
-    pub sigma: Vec<Number>,
-    pub residual_df: Vec<usize>,
-    pub covariance: Vec<Vec<f64>>,
-    pub rank: usize,
-    pub pivot: Vec<usize>,
-    pub method: String,
+    #[serde(flatten)]
+    pub linear: LinearFit,
     pub targets: Vec<Target>,
-    pub amean: Vec<f64>,
-    pub expression: Vec<Vec<f64>>,
     pub weights: Vec<Vec<f64>>,
     pub zero_mask: Vec<Vec<bool>>,
     pub zero_probes: Vec<Option<SolverStatus>>,
@@ -186,22 +176,26 @@ pub fn fit(data: &Dataset, lib: &LibraryState) -> Result<BaseFit> {
         })
         .collect::<Result<Vec<_>>>()?;
     Ok(BaseFit {
-        design: data.design.clone(),
-        coefficients: fitted
-            .iter()
-            .map(|(row, _)| row.coefficients.clone())
-            .collect(),
-        unscaled_se: fitted.iter().map(|(_, se)| se.clone()).collect(),
-        sigma: fitted.iter().map(|(row, _)| row.sigma).collect(),
-        residual_df: fitted.iter().map(|(row, _)| row.residual_df).collect(),
-        covariance: unweighted
-            .covariance
-            .chunks_exact(p)
-            .map(|row| row.to_vec())
-            .collect(),
-        rank: unweighted.rank,
-        pivot: unweighted.pivot.iter().map(|j| j + 1).collect(),
-        method: "ls".into(),
+        linear: LinearFit {
+            design: data.design.clone(),
+            coefficients: fitted
+                .iter()
+                .map(|(row, _)| row.coefficients.clone())
+                .collect(),
+            unscaled_se: fitted.iter().map(|(_, se)| se.clone()).collect(),
+            sigma: fitted.iter().map(|(row, _)| row.sigma).collect(),
+            residual_df: fitted.iter().map(|(row, _)| row.residual_df).collect(),
+            covariance: unweighted
+                .covariance
+                .chunks_exact(p)
+                .map(|row| row.to_vec())
+                .collect(),
+            rank: unweighted.rank,
+            pivot: unweighted.pivot.iter().map(|j| j + 1).collect(),
+            method: "ls".into(),
+            amean,
+            expression,
+        },
         targets: (0..n)
             .map(|i| Target {
                 sample: data.counts.sample_ids[i].clone(),
@@ -215,8 +209,6 @@ pub fn fit(data: &Dataset, lib: &LibraryState) -> Result<BaseFit> {
                 metadata: data.metadata[i].clone(),
             })
             .collect(),
-        amean,
-        expression,
         weights,
         zero_mask: probes.iter().map(|(mask, _)| mask.clone()).collect(),
         zero_probes: probes.into_iter().map(|(_, status)| status).collect(),

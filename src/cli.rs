@@ -7,7 +7,7 @@ use std::path::PathBuf;
 #[command(
     name = "rsomics-limma",
     version,
-    about = "Current voom weighted linear-model count analysis",
+    about = "Ordinary expression and current voom linear-model analysis",
     arg_required_else_help = true
 )]
 struct Cli {
@@ -21,11 +21,11 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Fit counts, filter/TMM and the current voom linear model
+    /// Fit supplied log-expression or the current count-input voom model
     Run(Run),
     /// Test a named contrast by moderating saved full base-fit state
     Results(Derive),
-    /// Export voom logCPM, precision weights, fitted values or residuals
+    /// Export expression, count-only weights/logCPM, fitted values or residuals
     Export(Export),
 }
 
@@ -38,8 +38,15 @@ struct Contrast {
 
 #[derive(Debug, Args)]
 struct Run {
-    #[arg(long)]
-    counts: PathBuf,
+    #[arg(
+        long,
+        required_unless_present = "expression",
+        conflicts_with = "expression"
+    )]
+    counts: Option<PathBuf>,
+    /// Already-logged finite signed expression; no transformation or normalization
+    #[arg(long, required_unless_present = "counts", conflicts_with = "counts")]
+    expression: Option<PathBuf>,
     #[arg(long)]
     samples: PathBuf,
     #[arg(long)]
@@ -65,6 +72,7 @@ struct Derive {
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum ExportKind {
+    Expression,
     LogCpm,
     Weights,
     Fitted,
@@ -103,23 +111,34 @@ pub fn run() -> std::process::ExitCode {
 fn execute(command: Command, workers: usize) -> crate::Result<serde_json::Value> {
     match command {
         Command::Run(args) => {
-            for path in [&args.counts, &args.samples, &args.design, &args.bundle] {
+            let matrix = args
+                .counts
+                .as_ref()
+                .or(args.expression.as_ref())
+                .expect("Clap requires exactly one input matrix");
+            for path in [matrix, &args.samples, &args.design, &args.bundle] {
                 artifact::named(path)?;
             }
             rsomics_common::reject_output_alias(
                 &args.bundle,
                 [
-                    args.counts.as_path(),
+                    matrix.as_path(),
                     args.samples.as_path(),
                     args.design.as_path(),
                 ],
             )?;
-            let dataset = input::read_inputs(&args.counts, &args.samples, &args.design)?;
-            let contrast = input::contrast(&dataset.design.names, &args.contrast.terms)?;
-            let analysis = crate::analyze(dataset, workers, contrast)?;
+            let analysis = if args.counts.is_some() {
+                let dataset = input::read_inputs(matrix, &args.samples, &args.design)?;
+                let contrast = input::contrast(&dataset.design.names, &args.contrast.terms)?;
+                crate::analyze(dataset, workers, contrast)?
+            } else {
+                let dataset = input::read_expression(matrix, &args.samples, &args.design)?;
+                let contrast = input::contrast(&dataset.design.names, &args.contrast.terms)?;
+                crate::analyze_expression(dataset, workers, contrast)?
+            };
             artifact::save(&args.bundle, &analysis)?;
             Ok(
-                serde_json::json!({"operation":"run","raw_genes":analysis.dataset.counts.n_genes(),"retained_genes":analysis.base.coefficients.len(),"workers":workers}),
+                serde_json::json!({"operation":"run","raw_genes":analysis.raw_genes(),"retained_genes":analysis.base().coefficients.len(),"workers":workers}),
             )
         }
         Command::Results(args) => {
@@ -133,11 +152,11 @@ fn execute(command: Command, workers: usize) -> crate::Result<serde_json::Value>
                 )?;
             }
             let analysis = artifact::load(&args.bundle)?;
-            let contrast = input::contrast(&analysis.dataset.design.names, &args.contrast.terms)?;
+            let contrast = input::contrast(&analysis.design().names, &args.contrast.terms)?;
             let pool = rayon::ThreadPoolBuilder::new()
                 .num_threads(workers)
                 .build()?;
-            let table = pool.install(|| results::derive(&analysis.base, &contrast))?;
+            let table = pool.install(|| results::derive(analysis.base(), &contrast))?;
             if let Some(state) = &args.state {
                 artifact::write_results_pair(&args.output, state, &analysis, &table)?;
             } else {
@@ -153,7 +172,7 @@ fn execute(command: Command, workers: usize) -> crate::Result<serde_json::Value>
             let analysis = artifact::load(&args.bundle)?;
             artifact::write_export(&args.output, &analysis, args.kind)?;
             Ok(
-                serde_json::json!({"operation":"export","genes":analysis.base.coefficients.len(),"full_base_reused":true}),
+                serde_json::json!({"operation":"export","genes":analysis.base().coefficients.len(),"full_base_reused":true}),
             )
         }
     }

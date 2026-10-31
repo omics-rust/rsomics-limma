@@ -1,6 +1,7 @@
 mod artifact;
 mod cli;
 mod ebayes;
+mod expression;
 mod input;
 mod linear;
 mod model;
@@ -33,8 +34,8 @@ fn analyze(
     pool.install(|| {
         let normalization = normalization::prepare(&dataset)?;
         let base = voom::fit(&dataset, &normalization)?;
-        let initial_results = results::derive(&base, &contrast)?;
-        Ok(artifact::Analysis {
+        let initial_results = results::derive(&base.linear, &contrast)?;
+        Ok(artifact::Analysis::Counts(Box::new(artifact::CountAnalysis {
             schema: 1,
             product: "rsomics-limma".into(),
             product_version: env!("CARGO_PKG_VERSION").into(),
@@ -45,7 +46,38 @@ fn analyze(
             normalization,
             base,
             initial_results,
-        })
+        })))
+    })
+}
+
+fn analyze_expression(
+    dataset: model::ExpressionDataset,
+    workers: usize,
+    contrast: Vec<f64>,
+) -> Result<artifact::Analysis> {
+    input::validate_expression(&dataset)?;
+    anyhow::ensure!(workers > 0, "worker count must be positive");
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(workers)
+        .build()?;
+    pool.install(|| {
+        let base = expression::fit(&dataset)?;
+        let initial_results = results::derive(&base, &contrast)?;
+        Ok(artifact::Analysis::Expression(Box::new(
+            artifact::ExpressionAnalysis {
+                schema: 2,
+                product: "rsomics-limma".into(),
+                product_version: env!("CARGO_PKG_VERSION").into(),
+                upstream: "limma3.68.5/825d1c8330d024adb6c54af66d79b0f4ec258530".into(),
+                workers,
+                input_kind: "log-expression".into(),
+                parameters: artifact::expression_parameters(),
+                source_provenance: artifact::expression_provenance(),
+                dataset,
+                base,
+                initial_results,
+            },
+        )))
     })
 }
 

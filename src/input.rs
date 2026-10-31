@@ -1,5 +1,5 @@
 use crate::Result;
-use crate::model::{Counts, Dataset, Design};
+use crate::model::{Counts, Dataset, Design, Expression, ExpressionDataset};
 use anyhow::{Context, anyhow, ensure};
 use csv::StringRecord;
 use nalgebra::DMatrix;
@@ -11,6 +11,16 @@ struct Table {
     columns: Vec<String>,
     rows: Vec<StringRecord>,
     sha256: String,
+}
+
+struct PreparedInput {
+    gene_ids: Vec<String>,
+    sample_ids: Vec<String>,
+    values: Vec<f64>,
+    design: Design,
+    metadata_columns: Vec<String>,
+    metadata: Vec<Vec<String>>,
+    input_sha256: BTreeMap<String, String>,
 }
 
 fn read_table(path: &Path) -> Result<Table> {
@@ -46,25 +56,25 @@ fn align(table: Table, samples: &[String], label: &str) -> Result<Vec<Vec<String
     }
     ensure!(
         rows.len() == samples.len(),
-        "{label} sample identities differ from counts"
+        "{label} sample identities differ from the input matrix"
     );
     let aligned = samples
         .iter()
         .map(|sample| {
             rows.remove(sample)
-                .ok_or_else(|| anyhow!("{label} is missing count sample '{sample}'"))
+                .ok_or_else(|| anyhow!("{label} is missing input sample '{sample}'"))
         })
         .collect::<Result<Vec<_>>>()?;
     ensure!(rows.is_empty(), "{label} has extra sample identities");
     Ok(aligned)
 }
 
-pub fn read_inputs(counts: &Path, samples: &Path, design: &Path) -> Result<Dataset> {
+fn prepare(counts: &Path, samples: &Path, design: &Path, kind: &str) -> Result<PreparedInput> {
     let counts = read_table(counts)?;
     let samples = read_table(samples)?;
     let design = read_table(design)?;
     let input_sha256 = BTreeMap::from([
-        ("counts".into(), counts.sha256.clone()),
+        (kind.into(), counts.sha256.clone()),
         ("samples".into(), samples.sha256.clone()),
         ("design".into(), design.sha256.clone()),
     ]);
@@ -77,7 +87,7 @@ pub fn read_inputs(counts: &Path, samples: &Path, design: &Path) -> Result<Datas
                 value
                     .trim()
                     .parse::<f64>()
-                    .with_context(|| format!("count for gene '{}' sample '{sample}'", &row[0]))?,
+                    .with_context(|| format!("{kind} for gene '{}' sample '{sample}'", &row[0]))?,
             );
         }
     }
@@ -96,22 +106,56 @@ pub fn read_inputs(counts: &Path, samples: &Path, design: &Path) -> Result<Datas
             );
         }
     }
-    let dataset = Dataset {
+    Ok(PreparedInput {
         design: Design {
             names,
             n_samples: counts.columns.len(),
             values: design_values,
         },
-        counts: Counts {
-            gene_ids,
-            sample_ids: counts.columns,
-            values,
-        },
+        gene_ids,
+        sample_ids: counts.columns,
+        values,
         metadata_columns,
         metadata,
         input_sha256,
+    })
+}
+
+pub fn read_inputs(counts: &Path, samples: &Path, design: &Path) -> Result<Dataset> {
+    let input = prepare(counts, samples, design, "counts")?;
+    let dataset = Dataset {
+        counts: Counts {
+            gene_ids: input.gene_ids,
+            sample_ids: input.sample_ids,
+            values: input.values,
+        },
+        design: input.design,
+        metadata_columns: input.metadata_columns,
+        metadata: input.metadata,
+        input_sha256: input.input_sha256,
     };
     validate(&dataset)?;
+    Ok(dataset)
+}
+
+pub fn read_expression(
+    expression: &Path,
+    samples: &Path,
+    design: &Path,
+) -> Result<ExpressionDataset> {
+    let input = prepare(expression, samples, design, "expression")?;
+    let dataset = ExpressionDataset {
+        expression: Expression {
+            gene_ids: input.gene_ids,
+            sample_ids: input.sample_ids,
+            values: input.values,
+        },
+        design: input.design,
+        metadata_columns: input.metadata_columns,
+        metadata: input.metadata,
+        input_sha256: input.input_sha256,
+    };
+    validate_expression(&dataset)?;
     Ok(dataset)
 }
 
@@ -125,41 +169,81 @@ fn unique(names: &[String], label: &str) -> Result<()> {
 }
 
 pub fn validate(dataset: &Dataset) -> Result<()> {
-    let counts = &dataset.counts;
-    let design = &dataset.design;
-    let n = counts.n_samples();
+    validate_data(
+        (
+            &dataset.counts.gene_ids,
+            &dataset.counts.sample_ids,
+            &dataset.counts.values,
+        ),
+        &dataset.design,
+        &dataset.metadata_columns,
+        &dataset.metadata,
+        &dataset.input_sha256,
+        "counts",
+    )
+}
+
+pub fn validate_expression(dataset: &ExpressionDataset) -> Result<()> {
+    validate_data(
+        (
+            &dataset.expression.gene_ids,
+            &dataset.expression.sample_ids,
+            &dataset.expression.values,
+        ),
+        &dataset.design,
+        &dataset.metadata_columns,
+        &dataset.metadata,
+        &dataset.input_sha256,
+        "expression",
+    )
+}
+
+fn validate_data(
+    matrix: (&[String], &[String], &[f64]),
+    design: &Design,
+    metadata_columns: &[String],
+    metadata: &[Vec<String>],
+    input_sha256: &BTreeMap<String, String>,
+    kind: &str,
+) -> Result<()> {
+    let (gene_ids, sample_ids, values) = matrix;
+    let n = sample_ids.len();
     let p = design.n_coefs();
-    ensure!(counts.n_genes() > 0, "count matrix has no genes");
+    ensure!(!gene_ids.is_empty(), "{kind} matrix has no genes");
     ensure!(
         p >= 1 && n > p,
         "design requires n > p and at least one coefficient"
     );
     ensure!(
         design.n_samples == n && n.checked_mul(p) == Some(design.values.len()),
-        "design dimensions differ from count samples"
+        "design dimensions differ from input samples"
     );
     ensure!(
-        counts.n_genes().checked_mul(n) == Some(counts.values.len()),
-        "count dimensions differ from IDs"
+        gene_ids.len().checked_mul(n) == Some(values.len()),
+        "{kind} dimensions differ from IDs"
     );
     ensure!(
-        dataset.metadata.len() == n
-            && dataset
-                .metadata
+        metadata.len() == n
+            && metadata
                 .iter()
-                .all(|row| row.len() == dataset.metadata_columns.len()),
+                .all(|row| row.len() == metadata_columns.len()),
         "sample metadata dimensions differ"
     );
-    unique(&counts.gene_ids, "gene ID")?;
-    unique(&counts.sample_ids, "sample ID")?;
+    unique(gene_ids, "gene ID")?;
+    unique(sample_ids, "sample ID")?;
     unique(&design.names, "design column")?;
-    unique(&dataset.metadata_columns, "metadata column")?;
-    for (index, &value) in counts.values.iter().enumerate() {
+    unique(metadata_columns, "metadata column")?;
+    for (index, &value) in values.iter().enumerate() {
         ensure!(
-            value.is_finite() && value >= 0.0,
-            "gene '{}' sample '{}' requires a finite nonnegative count",
-            counts.gene_ids[index / n],
-            counts.sample_ids[index % n]
+            value.is_finite() && (kind != "counts" || value >= 0.0),
+            "gene '{}' sample '{}' requires {}",
+            gene_ids[index / n],
+            sample_ids[index % n],
+            if kind == "counts" {
+                "a finite nonnegative count"
+            } else {
+                "finite supplied log-expression"
+            }
         );
     }
     ensure!(
@@ -171,9 +255,9 @@ pub fn validate(dataset: &Dataset) -> Result<()> {
         "design is rank deficient at QR relative tolerance 1e-7"
     );
     ensure!(
-        dataset.input_sha256.len() == 3
-            && ["counts", "samples", "design"].iter().all(|name| {
-                dataset.input_sha256.get(*name).is_some_and(|digest| {
+        input_sha256.len() == 3
+            && [kind, "samples", "design"].iter().all(|name| {
+                input_sha256.get(*name).is_some_and(|digest| {
                     digest.len() == 64
                         && digest
                             .bytes()
