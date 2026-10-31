@@ -44,8 +44,9 @@ robust/trend/TREAT modes, multi-contrast F, formula engines, plotting UI,
 batch/splice/genesets or cross-product fitted objects. No placeholders.
 
 Use `bash scripts/guarded-cargo.sh` for local builds/tests. It verifies external
-homes/target/TMP, actual Cargo target, free disks and boot APFS below80% before
-the fixed Rust1.91 toolchain. Original source-oracle checks are in
+Cargo home/resolved target, rustup/toolchain, TMPDIR and caches physically,
+then invokes the fixed Rust1.91 toolchain. Unrelated boot-disk occupancy does
+not block work. Original source-oracle checks are in
 scripts/check-workflow.py; numerical bands were adopted before native output.
 
 Full project license texts are LICENSE-MIT and LICENSE-APACHE-2.0; dependency
