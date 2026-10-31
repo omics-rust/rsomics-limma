@@ -6,6 +6,7 @@ import importlib.util
 import json
 import math
 from pathlib import Path
+import shutil
 import subprocess
 import time
 
@@ -57,7 +58,7 @@ def qualify(witness):
                 and all(reload["checks"][name].values()), "source case qualification failed: " + name)
 
 
-def compare_case(binary, witness, output, case, workers):
+def compare_case(binary, witness, output, case, workers, reuse=None):
     output.mkdir(parents=True)
     source = witness/"cases"/case
     inputs = witness/"inputs"/case
@@ -132,13 +133,19 @@ def compare_case(binary, witness, output, case, workers):
     try:
         bundle = output/"fit.json"
         first = next(iter(terms))
-        run(["run", "--expression", inputs/"expression.tsv", "--samples", inputs/"samples.tsv",
-             "--design", inputs/"design.tsv", "--bundle", bundle, *terms[first]])
+        if reuse is not None:
+            for name in ("fit.json", *(f"{name}.{suffix}" for name in terms for suffix in ("json", "tsv")),
+                         "expression.tsv", "fitted.tsv", "residuals.tsv"):
+                shutil.copyfile(reuse/name, output/name)
+        else:
+            run(["run", "--expression", inputs/"expression.tsv", "--samples", inputs/"samples.tsv",
+                 "--design", inputs/"design.tsv", "--bundle", bundle, *terms[first]])
         before = sha(bundle)
-        for name in terms:
-            run(["results", "--bundle", bundle, "--output", output/f"{name}.tsv", "--state", output/f"{name}.json", *terms[name]])
-        for kind in ("expression", "fitted", "residuals"):
-            run(["export", "--bundle", bundle, "--output", output/f"{kind}.tsv", "--kind", kind])
+        if reuse is None:
+            for name in terms:
+                run(["results", "--bundle", bundle, "--output", output/f"{name}.tsv", "--state", output/f"{name}.json", *terms[name]])
+            for kind in ("expression", "fitted", "residuals"):
+                run(["export", "--bundle", bundle, "--output", output/f"{kind}.tsv", "--kind", kind])
         require(sha(bundle) == before, "saved bundle bytes changed on reload")
         analysis = json.loads(bundle.read_text())
         require(analysis["schema"] == 2 and analysis["product"] == "rsomics-limma"
@@ -247,15 +254,37 @@ def main():
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--witness", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--reuse-from", type=Path)
+    parser.add_argument("--case", choices=CASES)
+    parser.add_argument("--workers", type=int, choices=(1, 4))
     args = parser.parse_args()
+    require((args.reuse_from is not None) == (args.case is not None and args.workers is not None),
+            "reuse requires --case and --workers; normal mode retains all five cases at both workers")
+    require(args.reuse_from is not None or args.case is None and args.workers is None, "normal case/worker selection is unsupported")
     binary, witness = args.binary.resolve(strict=True), args.witness.resolve(strict=True)
     require(not args.output.exists(), "output already exists")
     args.output.mkdir(parents=True)
-    save(args.output/"contract.json", dict(source_run=SOURCE_RUN, manifest_sha256=MANIFEST, capture_sha256=CAPTURE,
+    contract = dict(source_run=SOURCE_RUN, manifest_sha256=MANIFEST, capture_sha256=CAPTURE,
         reload_sha256=RELOAD, source_commit=SOURCE_COMMIT, source_archive_sha256=SOURCE_ARCHIVE,
         binary_sha256=sha(binary), controller_sha256=sha(Path(__file__)), shared_controller_sha256=sha(Path(__file__).with_name("check-workflow.py")),
-        bounds=BOUNDS, positive_probability_log_bound=LOG_BOUND, workers=[1, 4], cases=CASES))
+        bounds=BOUNDS, positive_probability_log_bound=LOG_BOUND, workers=[1, 4], cases=CASES)
+    if args.reuse_from is not None:
+        contract.update(validation_mode="existing complete outputs only; zero native commands", reused_case=args.case,
+                        reused_workers=args.workers, reuse_from=str(args.reuse_from.resolve(strict=True)))
+    save(args.output/"contract.json", contract)
     qualify(witness)
+    if args.reuse_from is not None:
+        reused = args.reuse_from.resolve(strict=True)
+        destination = args.output/args.case/f"workers-{args.workers}"
+        analysis, discoveries = compare_case(binary, witness, destination, args.case, args.workers, reused)
+        require(analysis["workers"] == args.workers, "reused worker provenance differs")
+        comparison = json.loads((destination/"comparison.json").read_text())
+        record = dict(passed=comparison["passed"], validation="existing complete outputs; no native commands or refit",
+                      native_commands_executed=0, case=args.case, workers=args.workers, source_run=SOURCE_RUN, discoveries=discoveries)
+        save(args.output/"summary.json", record)
+        require(record["passed"], "existing ordinary output validation failed; all failures retained")
+        print(json.dumps(record))
+        return
     summaries, errors = [], []
     for case in CASES:
         states = []
