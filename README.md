@@ -1,8 +1,11 @@
 # rsomics-limma
 
 Native CLI for ordinary supplied log-expression and current count-input voom
-linear-model lifecycles. This source candidate is not yet published on
-crates.io; `publish=false` remains in place until registry delivery is enabled.
+linear-model lifecycles. [CI](https://github.com/omics-rust/rsomics-limma/actions/workflows/ci.yml)
+checks all four native targets; [Releases](https://github.com/omics-rust/rsomics-limma/releases)
+contains downloadable delivery artifacts when a release has passed those gates.
+GitHub delivery is separate from crates.io: `publish=false` remains in place
+until registry delivery is enabled.
 
 The supported interface is the CLI, versioned analysis/contrast JSON and tables.
 The Rust library exports only `run_cli` as the binary bootstrap; statistical,
@@ -94,6 +97,36 @@ Build or install from this checkout with Rust1.91 or newer:
 cargo install --locked --path .
 rsomics-limma --help
 ```
+
+Native releases have one archive for each of `linux-x86_64`, `linux-aarch64`,
+`macos-x86_64` and `macos-aarch64`, plus the clean Cargo source package and
+`SHA256SUMS`. Select your native archive, verify its checksum, unpack it and
+put the single `rsomics-limma` executable on PATH. Keep the bundled README,
+BUILD provenance, project licenses and dependency notice texts. Checksums are
+unsigned; the release does not claim trusted signing or macOS notarization.
+Python and R are not runtime dependencies of the installed executable.
+
+The source package includes the same small fixtures exercised after installation
+on every native host. From the unpacked source root:
+
+```sh
+rsomics-limma --threads 4 run --counts tests/data/counts.tsv \
+  --samples tests/data/samples.tsv --design tests/data/design.tsv --bundle count-fit.json \
+  '--contrast=(Intercept)=0' --contrast=typesingle-read=0 --contrast=conditiontreated=1
+rsomics-limma results --bundle count-fit.json --output count-results.tsv --state count-results.json \
+  '--contrast=(Intercept)=0' --contrast=typesingle-read=0 --contrast=conditiontreated=1
+rsomics-limma export --bundle count-fit.json --kind weights --output count-weights.tsv
+rsomics-limma --threads 4 run --expression tests/data/expression.tsv \
+  --samples tests/data/samples.tsv --design tests/data/design.tsv --bundle ordinary-fit.json \
+  '--contrast=(Intercept)=0' --contrast=typesingle-read=0 --contrast=conditiontreated=1
+rsomics-limma results --bundle ordinary-fit.json --output ordinary-results.tsv --state ordinary-results.json \
+  '--contrast=(Intercept)=0' --contrast=typesingle-read=0 --contrast=conditiontreated=1
+rsomics-limma export --bundle ordinary-fit.json --kind expression --output ordinary-expression.tsv
+```
+
+These installation witnesses are not new source-oracle or performance runs.
+New delivery binaries are not assigned historical timing results merely because
+the statistical source is unchanged. `BUILD.json` records the distinction.
 
 The project development guard below applies to this workspace, not to users'
 installation paths.

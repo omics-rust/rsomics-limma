@@ -13,7 +13,7 @@ jobs:
   native:
     name: ${{ matrix.target }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -33,9 +33,15 @@ jobs:
     defaults:
       run:
         shell: bash
+    env:
+      CARGO_BUILD_JOBS: '2'
+      PYTHONDONTWRITEBYTECODE: '1'
+      NATIVE_TARGET: ${{ matrix.target }}
+      EXPECTED_HOST: ${{ matrix.host }}
     steps:
       - uses: actions/checkout@v6
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
       - name: Prepare runner storage
         run: |
@@ -44,14 +50,15 @@ jobs:
           export CARGO_TARGET_DIR="$RUNNER_TEMP/cargo-target"
           export RUSTUP_HOME="$RUNNER_TEMP/rustup-home"
           export TMPDIR="$RUNNER_TEMP/scratch"
-          mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR" "$RUSTUP_HOME" "$TMPDIR"
+          export XDG_CACHE_HOME="$RUNNER_TEMP/cache"
+          mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR" "$RUSTUP_HOME" "$TMPDIR" "$XDG_CACHE_HOME" "$RUNNER_TEMP/delivery"
           printf '%s\n' "CARGO_HOME=$CARGO_HOME" "CARGO_TARGET_DIR=$CARGO_TARGET_DIR" \
-            "RUSTUP_HOME=$RUSTUP_HOME" "TMPDIR=$TMPDIR" >> "$GITHUB_ENV"
+            "RUSTUP_HOME=$RUSTUP_HOME" "TMPDIR=$TMPDIR" "XDG_CACHE_HOME=$XDG_CACHE_HOME" >> "$GITHUB_ENV"
           python3 -B - <<'PY'
           import os
           from pathlib import Path
           root = Path(os.environ['RUNNER_TEMP']).resolve(strict=True)
-          for key in ('CARGO_HOME', 'CARGO_TARGET_DIR', 'RUSTUP_HOME', 'TMPDIR'):
+          for key in ('CARGO_HOME', 'CARGO_TARGET_DIR', 'RUSTUP_HOME', 'TMPDIR', 'XDG_CACHE_HOME'):
               path = Path(os.environ[key]).resolve(strict=True)
               assert path.is_relative_to(root), (key, path)
               print(key, path)
@@ -63,8 +70,6 @@ jobs:
         with:
           components: clippy,rustfmt
       - name: Verify native host and Cargo target
-        env:
-          EXPECTED_HOST: ${{ matrix.host }}
         run: |
           set -euo pipefail
           rustc -Vv
@@ -81,22 +86,32 @@ jobs:
         run: cargo doc --locked --no-deps --all-features
         env:
           RUSTDOCFLAGS: -D warnings
-      - if: matrix.target == 'linux-x86_64'
-        name: Verify source package and unpacked workflow tests
+      - name: Verify complete source package
         run: |
           set -euo pipefail
-          cargo package --locked --list
-          cargo package --locked
-          archive="$CARGO_TARGET_DIR/package/rsomics-limma-0.1.0.crate"
-          shasum -a 256 "$archive"
-          mkdir "$RUNNER_TEMP/unpacked"
-          tar -xzf "$archive" -C "$RUNNER_TEMP/unpacked"
-          package="$RUNNER_TEMP/unpacked/rsomics-limma-0.1.0"
-          test -f "$package/LICENSE-MIT"
-          test -f "$package/LICENSE-APACHE-2.0"
-          test -f "$package/THIRD_PARTY_NOTICES.md"
-          test -f "$package/docs/merge-provenance.md"
-          test -f "$package/tests/data/counts.tsv"
-          test -f "$package/tests/data/samples.tsv"
-          test -f "$package/tests/data/design.tsv"
-          cargo test --manifest-path "$package/Cargo.toml" --locked --all-targets --all-features
+          cargo metadata --locked --no-deps --format-version 1 > "$RUNNER_TEMP/delivery/package-metadata.json"
+          cargo package --locked --list > "$RUNNER_TEMP/delivery/package-files.txt"
+          cargo package --locked > "$RUNNER_TEMP/delivery/package.stdout" 2> "$RUNNER_TEMP/delivery/package.stderr"
+          python3 -B scripts/delivery.py source
+
+      - name: Test packaged release
+        run: cargo test --manifest-path "$PACKAGE_DIRECTORY/Cargo.toml" --release --locked --all-targets --all-features
+
+      - name: Install and exercise packaged binary
+        run: |
+          set -euo pipefail
+          cargo install --path "$PACKAGE_DIRECTORY" --locked --root "$RUNNER_TEMP/installed" \
+            > "$RUNNER_TEMP/delivery/install.stdout" 2> "$RUNNER_TEMP/delivery/install.stderr"
+          python3 -B "$PACKAGE_DIRECTORY/scripts/delivery.py" smoke --binary "$RUNNER_TEMP/installed/bin/rsomics-limma"
+
+      - name: Assemble native delivery candidate
+        run: python3 -B scripts/delivery.py bundle --binary "$RUNNER_TEMP/installed/bin/rsomics-limma"
+
+      - name: Upload native and source candidates
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rsomics-limma-${{ matrix.target }}-${{ github.sha }}
+          path: ${{ runner.temp }}/delivery/
+          if-no-files-found: error
+          retention-days: 30
